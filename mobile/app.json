@@ -32,9 +32,6 @@
       "expo-secure-store",
       "expo-asset"
     ],
-    "experiments": {
-      "typedRoutes": true
-    },
     "scheme": "agnector"
   }
 }
