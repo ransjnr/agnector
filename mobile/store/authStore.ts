@@ -3,6 +3,15 @@ import * as SecureStore from 'expo-secure-store';
 import api from '../services/api';
 import { User } from '../types';
 
+const createGuestUser = (name = 'Guest User', email = 'guest@agnector.local'): User => ({
+  id: 'guest-user',
+  name,
+  email,
+  avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0ea5e9&color=fff&size=128`,
+  plan: 'free',
+  createdAt: new Date().toISOString(),
+});
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -17,58 +26,34 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  token: null,
+  user: createGuestUser(),
+  token: 'guest-token',
   isLoading: false,
   isInitialized: false,
   error: null,
 
   initialize: async () => {
-    try {
-      const token = await SecureStore.getItemAsync('auth_token');
-      if (token) {
-        const res = await api.get('/auth/me');
-        set({ user: res.data.user, token, isInitialized: true });
-      } else {
-        set({ isInitialized: true });
-      }
-    } catch {
-      await SecureStore.deleteItemAsync('auth_token');
-      set({ user: null, token: null, isInitialized: true });
-    }
+    await SecureStore.deleteItemAsync('auth_token');
+    set({ user: createGuestUser(), token: 'guest-token', isInitialized: true, error: null });
   },
 
   login: async (email, password) => {
     set({ isLoading: true, error: null });
-    try {
-      const res = await api.post('/auth/login', { email, password });
-      const { user, token } = res.data;
-      await SecureStore.setItemAsync('auth_token', token);
-      set({ user, token, isLoading: false });
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'Login failed. Please try again.';
-      set({ isLoading: false, error: msg });
-      throw new Error(msg);
-    }
+    const safeEmail = email?.trim() || 'guest@agnector.local';
+    const localName = safeEmail.includes('@') ? safeEmail.split('@')[0] : 'Guest User';
+    set({ user: createGuestUser(localName, safeEmail), token: 'guest-token', isLoading: false, error: null });
   },
 
   register: async (name, email, password) => {
     set({ isLoading: true, error: null });
-    try {
-      const res = await api.post('/auth/register', { name, email, password });
-      const { user, token } = res.data;
-      await SecureStore.setItemAsync('auth_token', token);
-      set({ user, token, isLoading: false });
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'Registration failed. Please try again.';
-      set({ isLoading: false, error: msg });
-      throw new Error(msg);
-    }
+    const displayName = name?.trim() || 'Guest User';
+    const safeEmail = email?.trim() || 'guest@agnector.local';
+    set({ user: createGuestUser(displayName, safeEmail), token: 'guest-token', isLoading: false, error: null });
   },
 
   logout: async () => {
     await SecureStore.deleteItemAsync('auth_token');
-    set({ user: null, token: null });
+    set({ user: createGuestUser(), token: 'guest-token' });
   },
 
   clearError: () => set({ error: null }),

@@ -1,268 +1,202 @@
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
-  RefreshControl,
   TouchableOpacity,
-  Modal,
+  FlatList,
+  TextInput,
   Alert,
+  RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../../store/authStore';
-import { useConnectionStore } from '../../store/connectionStore';
-import { useAgentStore } from '../../store/agentStore';
-import { Connection, Integration, Agent } from '../../types';
-import { colors, spacing, radius, typography } from '../../constants/theme';
-import ConnectionCard from '../../components/ConnectionCard';
-import StatsCard from '../../components/StatsCard';
+import { colors, radius, spacing, typography } from '../../constants/theme';
+import { useRemoteStore } from '../../store/remoteStore';
 
-export default function HomeScreen() {
-  const { user } = useAuthStore();
-  const { connections, stats, fetchConnections, fetchStats, createConnection, toggleConnection, assignAgent, deleteConnection } = useConnectionStore();
-  const { integrations, agents, fetchIntegrations, fetchAgents } = useAgentStore();
-  const [refreshing, setRefreshing] = useState(false);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showAgentModal, setShowAgentModal] = useState(false);
-  const [selectedConnection, setSelectedConnection] = useState<Connection | null>(null);
+const osIcon = {
+  windows: 'logo-windows',
+  macos: 'logo-apple',
+  linux: 'logo-tux',
+  unknown: 'desktop-outline',
+} as const;
 
-  const load = useCallback(async () => {
-    await Promise.all([fetchConnections(), fetchStats(), fetchIntegrations(), fetchAgents()]);
+export default function DevicesScreen() {
+  const {
+    devices,
+    selectedDeviceId,
+    serverUrl,
+    isLoadingDevices,
+    isSendingCommand,
+    error,
+    initialize,
+    setServerUrl,
+    discoverDevices,
+    connectDevice,
+    selectDevice,
+    wakeSelectedDevice,
+    clearError,
+  } = useRemoteStore();
+
+  const [urlDraft, setUrlDraft] = useState(serverUrl);
+  const [pairingCode, setPairingCode] = useState('');
+
+  useEffect(() => {
+    initialize();
   }, []);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setUrlDraft(serverUrl);
+  }, [serverUrl]);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
+  const selected = useMemo(
+    () => devices.find((device) => device.id === selectedDeviceId) || null,
+    [devices, selectedDeviceId]
+  );
 
-  const connectedIntegrationIds = new Set(connections.map((c) => c.integrationId));
-  const availableIntegrations = integrations.filter((i) => !connectedIntegrationIds.has(i.id));
-
-  const handleAddIntegration = async (integration: Integration) => {
-    setShowAddModal(false);
+  const onSaveUrl = async () => {
     try {
-      await createConnection(integration.id);
-      await fetchStats();
+      await setServerUrl(urlDraft);
+      Alert.alert('Bridge Updated', 'Device list refreshed using the new bridge URL.');
     } catch (err: any) {
-      if (err.response?.status !== 409) {
-        Alert.alert('Error', 'Failed to connect integration.');
-      }
+      Alert.alert('Invalid URL', err.message || 'Could not update bridge URL.');
     }
   };
 
-  const handleToggle = async (connection: Connection) => {
+  const onConnect = async (deviceId: string) => {
     try {
-      await toggleConnection(connection.id);
-    } catch {
-      Alert.alert('Error', 'Failed to toggle connection.');
+      await connectDevice(deviceId, pairingCode.trim() || undefined);
+      Alert.alert('Connected', 'The device is now paired with this controller.');
+    } catch (err: any) {
+      Alert.alert('Connection failed', err.message || 'Unable to pair with device.');
     }
   };
 
-  const handleAssignAgent = (connection: Connection) => {
-    setSelectedConnection(connection);
-    setShowAgentModal(true);
-  };
-
-  const handleSelectAgent = async (agent: Agent | null) => {
-    if (!selectedConnection) return;
-    setShowAgentModal(false);
+  const onWake = async () => {
     try {
-      await assignAgent(selectedConnection.id, agent ? agent.id : null);
-    } catch {
-      Alert.alert('Error', 'Failed to assign agent.');
+      await wakeSelectedDevice();
+      Alert.alert('Wake Signal Sent', 'If Wake-on-LAN is configured, your PC should power on shortly.');
+    } catch (err: any) {
+      Alert.alert('Wake failed', err.message || 'Could not send wake signal.');
     }
-    setSelectedConnection(null);
-  };
-
-  const handleDeleteConnection = (connection: Connection) => {
-    Alert.alert(
-      'Remove Connection',
-      `Remove ${getIntegrationName(connection.integrationId)}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteConnection(connection.id);
-            } catch {
-              Alert.alert('Error', 'Failed to remove connection.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const getIntegration = (id: string) => integrations.find((i) => i.id === id);
-  const getAgent = (id: string | null) => agents.find((a) => a.id === id);
-  const getIntegrationName = (id: string) => getIntegration(id)?.name ?? id;
-
-  const greeting = () => {
-    const h = new Date().getHours();
-    if (h < 12) return 'Good morning';
-    if (h < 18) return 'Good afternoon';
-    return 'Good evening';
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>{greeting()},</Text>
-          <Text style={styles.userName}>{user?.name?.split(' ')[0] ?? 'there'} 👋</Text>
-        </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)}>
-          <Ionicons name="add" size={22} color="#fff" />
+        <Text style={styles.title}>Remote Devices</Text>
+        <TouchableOpacity style={styles.refreshBtn} onPress={discoverDevices}>
+          <Ionicons name="refresh" size={18} color={colors.primary} />
         </TouchableOpacity>
       </View>
 
+      <View style={styles.panel}>
+        <Text style={styles.label}>Bridge URL</Text>
+        <TextInput
+          style={styles.input}
+          value={urlDraft}
+          onChangeText={setUrlDraft}
+          autoCapitalize="none"
+          autoCorrect={false}
+          placeholder="http://192.168.1.10:8787"
+          placeholderTextColor={colors.text.muted}
+        />
+        <Text style={styles.hint}>Run a companion service on your laptop and expose port 8787.</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={onSaveUrl}>
+          <Text style={styles.primaryBtnText}>Save & Refresh</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.panel}>
+        <Text style={styles.label}>Pairing Code (optional)</Text>
+        <TextInput
+          style={styles.input}
+          value={pairingCode}
+          onChangeText={setPairingCode}
+          placeholder="Enter code shown on your PC agent"
+          placeholderTextColor={colors.text.muted}
+          autoCapitalize="characters"
+        />
+      </View>
+
+      {error ? (
+        <TouchableOpacity style={styles.errorBox} onPress={clearError}>
+          <Ionicons name="warning-outline" size={18} color={colors.warning} />
+          <Text style={styles.errorText}>{error}</Text>
+        </TouchableOpacity>
+      ) : null}
+
       <FlatList
-        data={connections}
+        data={devices}
         keyExtractor={(item) => item.id}
+        refreshControl={<RefreshControl refreshing={isLoadingDevices} onRefresh={discoverDevices} />}
         contentContainerStyle={styles.list}
-        ListHeaderComponent={
-          <View style={styles.statsRow}>
-            <StatsCard
-              icon="flash"
-              iconColor={colors.primary}
-              value={stats.active}
-              label="Active"
-            />
-            <StatsCard
-              icon="sparkles"
-              iconColor={colors.secondary}
-              value={stats.withAgents}
-              label="With Agents"
-            />
-            <StatsCard
-              icon="apps"
-              iconColor={colors.success}
-              value={stats.total}
-              label="Total"
-            />
-          </View>
-        }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <View style={styles.emptyIcon}>
-              <Ionicons name="apps-outline" size={40} color={colors.primary} />
+          isLoadingDevices ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
+          ) : (
+            <View style={styles.emptyWrap}>
+              <Ionicons name="desktop-outline" size={42} color={colors.text.muted} />
+              <Text style={styles.emptyTitle}>No devices discovered</Text>
+              <Text style={styles.emptyHint}>Check your bridge URL and make sure your PC agent is running.</Text>
             </View>
-            <Text style={styles.emptyTitle}>No connections yet</Text>
-            <Text style={styles.emptyText}>Tap the + button to connect your first app</Text>
-            <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowAddModal(true)}>
-              <Text style={styles.emptyBtnText}>Add Connection</Text>
-            </TouchableOpacity>
-          </View>
+          )
         }
-        renderItem={({ item }) => (
-          <ConnectionCard
-            connection={item}
-            integration={getIntegration(item.integrationId)}
-            agent={getAgent(item.agentId)}
-            onToggle={() => handleToggle(item)}
-            onAssignAgent={() => handleAssignAgent(item)}
-            onDelete={() => handleDeleteConnection(item)}
-          />
-        )}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        showsVerticalScrollIndicator={false}
+        renderItem={({ item }) => {
+          const isSelected = selectedDeviceId === item.id;
+          const iconName = osIcon[item.os] || 'desktop-outline';
+
+          return (
+            <TouchableOpacity
+              style={[styles.deviceCard, isSelected && styles.deviceCardSelected]}
+              onPress={() => selectDevice(item.id)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.deviceTop}>
+                <View style={styles.deviceIdentity}>
+                  <View style={styles.deviceIconWrap}>
+                    <Ionicons name={iconName as any} size={20} color={colors.primary} />
+                  </View>
+                  <View>
+                    <Text style={styles.deviceName}>{item.name}</Text>
+                    <Text style={styles.deviceHost}>{item.host}</Text>
+                  </View>
+                </View>
+                <View style={[styles.stateBadge, item.state === 'online' && styles.onlineBadge]}>
+                  <Text style={[styles.stateText, item.state === 'online' && styles.onlineText]}>{item.state}</Text>
+                </View>
+              </View>
+
+              <View style={styles.metaRow}>
+                <Text style={styles.metaText}>Volume: {item.volume ?? 0}%</Text>
+                <Text style={styles.metaText}>Brightness: {item.brightness ?? 0}%</Text>
+              </View>
+
+              <View style={styles.actionsRow}>
+                <TouchableOpacity style={styles.secondaryBtn} onPress={() => onConnect(item.id)} disabled={isSendingCommand}>
+                  <Text style={styles.secondaryBtnText}>{item.isConnected ? 'Reconnect' : 'Connect'}</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.secondaryBtn, !isSelected && styles.secondaryBtnDisabled]}
+                  onPress={onWake}
+                  disabled={!isSelected || isSendingCommand}
+                >
+                  <Text style={styles.secondaryBtnText}>Wake</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
 
-      {/* Add Integration Modal */}
-      <Modal visible={showAddModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Connection</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text.secondary} />
-              </TouchableOpacity>
-            </View>
-            {availableIntegrations.length === 0 ? (
-              <View style={styles.allConnected}>
-                <Ionicons name="checkmark-circle" size={40} color={colors.success} />
-                <Text style={styles.allConnectedText}>All integrations connected!</Text>
-              </View>
-            ) : (
-              <FlatList
-                data={availableIntegrations}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={{ paddingBottom: spacing.lg }}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.integrationRow}
-                    onPress={() => handleAddIntegration(item)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={[styles.integrationIconBox, { backgroundColor: `${item.accentColor}20` }]}>
-                      <Text style={styles.integrationIcon}>{item.icon}</Text>
-                    </View>
-                    <View style={styles.integrationInfo}>
-                      <Text style={styles.integrationName}>{item.name}</Text>
-                      <Text style={styles.integrationDesc} numberOfLines={1}>{item.description}</Text>
-                    </View>
-                    <Ionicons name="add-circle" size={24} color={colors.primary} />
-                  </TouchableOpacity>
-                )}
-              />
-            )}
-          </View>
+      {selected ? (
+        <View style={styles.footerNotice}>
+          <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+          <Text style={styles.footerText}>Selected device: {selected.name}</Text>
         </View>
-      </Modal>
-
-      {/* Assign Agent Modal */}
-      <Modal visible={showAgentModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Assign AI Agent</Text>
-              <TouchableOpacity onPress={() => { setShowAgentModal(false); setSelectedConnection(null); }}>
-                <Ionicons name="close" size={24} color={colors.text.secondary} />
-              </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={styles.agentRow} onPress={() => handleSelectAgent(null)}>
-              <View style={[styles.agentIconBox, { backgroundColor: `${colors.danger}20` }]}>
-                <Ionicons name="remove-circle-outline" size={22} color={colors.danger} />
-              </View>
-              <Text style={[styles.agentName, { color: colors.danger }]}>Remove Agent</Text>
-            </TouchableOpacity>
-            <FlatList
-              data={agents}
-              keyExtractor={(a) => a.id}
-              contentContainerStyle={{ paddingBottom: spacing.lg }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.agentRow,
-                    selectedConnection?.agentId === item.id && styles.agentRowSelected,
-                  ]}
-                  onPress={() => handleSelectAgent(item)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.agentIconBox, { backgroundColor: `${item.color}20` }]}>
-                    <Text style={styles.integrationIcon}>{item.icon}</Text>
-                  </View>
-                  <View style={styles.integrationInfo}>
-                    <Text style={styles.agentName}>{item.name}</Text>
-                    <Text style={styles.integrationDesc} numberOfLines={1}>{item.description}</Text>
-                  </View>
-                  {selectedConnection?.agentId === item.id && (
-                    <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -270,103 +204,127 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  greeting: { fontSize: 14, color: colors.text.secondary },
-  userName: { fontSize: 22, fontWeight: '700', color: colors.text.primary },
-  addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.full,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  list: { paddingBottom: spacing.xl },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.xl },
-  emptyIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: radius.xl,
-    backgroundColor: `${colors.primary}15`,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
-  },
-  emptyTitle: { ...typography.h3, marginBottom: spacing.xs },
-  emptyText: { ...typography.caption, textAlign: 'center', marginBottom: spacing.lg },
-  emptyBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    borderRadius: radius.full,
-  },
-  emptyBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end' },
-  modalSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    maxHeight: '80%',
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderColor: colors.border,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
     paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: spacing.sm,
-  },
-  modalTitle: { ...typography.h3 },
-  integrationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    gap: spacing.md,
+    justifyContent: 'space-between',
   },
-  integrationIconBox: {
-    width: 44,
-    height: 44,
+  title: { ...typography.h2 },
+  refreshBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  panel: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  label: { ...typography.label, textTransform: 'uppercase', letterSpacing: 0.6 },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 11,
+    color: colors.text.primary,
+    backgroundColor: colors.elevated,
+  },
+  hint: { ...typography.caption },
+  primaryBtn: {
+    backgroundColor: colors.primary,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 12,
   },
-  integrationIcon: { fontSize: 22 },
-  integrationInfo: { flex: 1 },
-  integrationName: { fontSize: 15, fontWeight: '600', color: colors.text.primary },
-  integrationDesc: { fontSize: 12, color: colors.text.secondary, marginTop: 2 },
-  allConnected: { alignItems: 'center', padding: spacing.xl, gap: spacing.md },
-  allConnectedText: { ...typography.body, color: colors.text.secondary },
-  agentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm + 2,
-    gap: spacing.md,
-  },
-  agentRowSelected: { backgroundColor: `${colors.primary}10` },
-  agentIconBox: {
-    width: 44,
-    height: 44,
+  primaryBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  errorBox: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: `${colors.warning}40`,
+    backgroundColor: `${colors.warning}15`,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  errorText: { ...typography.caption, flex: 1, color: colors.warning },
+  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
+  emptyWrap: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyTitle: { ...typography.h3, color: colors.text.secondary },
+  emptyHint: { ...typography.caption, textAlign: 'center', paddingHorizontal: spacing.lg },
+  deviceCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  deviceCardSelected: { borderColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.25, shadowRadius: 10 },
+  deviceTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  deviceIdentity: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  deviceIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: `${colors.primary}20`,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  agentName: { fontSize: 15, fontWeight: '600', color: colors.text.primary },
+  deviceName: { ...typography.h3 },
+  deviceHost: { ...typography.caption },
+  stateBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    backgroundColor: `${colors.text.muted}20`,
+  },
+  onlineBadge: { backgroundColor: `${colors.success}20` },
+  stateText: { fontSize: 12, color: colors.text.secondary, fontWeight: '600' },
+  onlineText: { color: colors.success },
+  metaRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  metaText: { ...typography.caption },
+  actionsRow: { flexDirection: 'row', gap: spacing.sm },
+  secondaryBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: colors.elevated,
+  },
+  secondaryBtnDisabled: { opacity: 0.4 },
+  secondaryBtnText: { color: colors.text.primary, fontWeight: '600' },
+  footerNotice: {
+    margin: spacing.lg,
+    marginTop: 0,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    backgroundColor: `${colors.success}20`,
+    borderWidth: 1,
+    borderColor: `${colors.success}40`,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  footerText: { ...typography.caption, color: colors.success },
 });

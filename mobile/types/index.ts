@@ -76,3 +76,43 @@ export type IntegrationCategory =
   | 'analytics'
   | 'ecommerce'
   | 'entertainment';
+
+export type PcConnectionState = 'online' | 'offline' | 'sleeping' | 'unknown';
+
+export interface PcDevice {
+  id: string;
+  name: string;
+  host: string;
+  os: 'windows' | 'macos' | 'linux' | 'unknown';
+  state: PcConnectionState;
+  supportsWakeOnLan: boolean;
+  macAddress?: string;
+  volume?: number;
+  brightness?: number;
+  isMuted?: boolean;
+  isConnected?: boolean;
+  lastSeenAt?: string;
+}
+
+export type PcCommandType =
+  | 'power_on'
+  | 'power_off'
+  | 'restart'
+  | 'sleep'
+  | 'lock'
+  | 'volume_up'
+  | 'volume_down'
+  | 'volume_set'
+  | 'mute_toggle'
+  | 'brightness_up'
+  | 'brightness_down'
+  | 'brightness_set'
+  | 'night_light_toggle'
+  | 'high_contrast_toggle'
+  | 'magnifier_toggle'
+  | 'screen_reader_toggle';
+
+export interface PcCommandPayload {
+  value?: number;
+  enabled?: boolean;
+}

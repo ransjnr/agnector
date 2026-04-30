@@ -1,183 +1,220 @@
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  RefreshControl,
-} from 'react-native';
-import { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { useMemo } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useAgentStore } from '../../store/agentStore';
-import { colors, spacing, radius, typography } from '../../constants/theme';
-import AgentCard from '../../components/AgentCard';
+import { colors, radius, spacing, typography } from '../../constants/theme';
+import { useRemoteStore } from '../../store/remoteStore';
 
-const CATEGORIES = [
-  { id: 'all', label: 'All' },
-  { id: 'productivity', label: 'Productivity' },
-  { id: 'development', label: 'Dev' },
-  { id: 'communication', label: 'Comms' },
-  { id: 'analytics', label: 'Analytics' },
-  { id: 'marketing', label: 'Marketing' },
-  { id: 'support', label: 'Support' },
-];
+interface ActionButtonProps {
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  danger?: boolean;
+}
 
-export default function AgentsScreen() {
-  const { agents, isLoadingAgents, selectedCategory, searchQuery, fetchAgents, setCategory, setSearch } =
-    useAgentStore();
-  const [localSearch, setLocalSearch] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
+function ActionButton({ title, icon, onPress, danger }: ActionButtonProps) {
+  return (
+    <TouchableOpacity
+      style={[styles.actionButton, danger && styles.actionButtonDanger]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <Ionicons name={icon} size={18} color={danger ? colors.danger : colors.primary} />
+      <Text style={[styles.actionButtonText, danger && { color: colors.danger }]}>{title}</Text>
+    </TouchableOpacity>
+  );
+}
 
-  useEffect(() => {
-    fetchAgents();
-  }, []);
+export default function ControlsScreen() {
+  const { devices, selectedDeviceId, isSendingCommand, sendCommand } = useRemoteStore();
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchAgents();
-    setRefreshing(false);
+  const selected = useMemo(
+    () => devices.find((device) => device.id === selectedDeviceId) || null,
+    [devices, selectedDeviceId]
+  );
+
+  const run = async (fn: () => Promise<void>, successMessage: string) => {
+    try {
+      await fn();
+      Alert.alert('Sent', successMessage);
+    } catch (err: any) {
+      Alert.alert('Command failed', err.message || 'Unable to send command to device.');
+    }
   };
 
-  const handleSearch = (text: string) => {
-    setLocalSearch(text);
-    const debounce = setTimeout(() => setSearch(text), 300);
-    return () => clearTimeout(debounce);
-  };
+  if (!selected) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.emptyWrap}>
+          <Ionicons name="desktop-outline" size={44} color={colors.text.muted} />
+          <Text style={styles.emptyTitle}>No device selected</Text>
+          <Text style={styles.emptyHint}>Open Devices tab, connect a laptop/PC, then return here.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>AI Agents</Text>
-          <Text style={styles.subtitle}>{agents.length} agents available</Text>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={styles.header}>
+          <Text style={styles.title}>PC Controls</Text>
+          <Text style={styles.subtitle}>{selected.name}</Text>
         </View>
-        <View style={styles.headerBadge}>
-          <Ionicons name="sparkles" size={16} color={colors.secondary} />
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Power</Text>
+          <View style={styles.gridTwo}>
+            <ActionButton
+              title="Power Off"
+              icon="power"
+              danger
+              onPress={() => run(() => sendCommand('power_off'), 'Shutdown command sent.')}
+            />
+            <ActionButton
+              title="Restart"
+              icon="refresh"
+              onPress={() => run(() => sendCommand('restart'), 'Restart command sent.')}
+            />
+            <ActionButton
+              title="Sleep"
+              icon="moon"
+              onPress={() => run(() => sendCommand('sleep'), 'Sleep command sent.')}
+            />
+            <ActionButton
+              title="Lock"
+              icon="lock-closed"
+              onPress={() => run(() => sendCommand('lock'), 'Lock command sent.')}
+            />
+          </View>
         </View>
-      </View>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search-outline" size={18} color={colors.text.muted} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search agents..."
-          placeholderTextColor={colors.text.muted}
-          value={localSearch}
-          onChangeText={handleSearch}
-        />
-        {localSearch.length > 0 && (
-          <TouchableOpacity onPress={() => { setLocalSearch(''); setSearch(''); }}>
-            <Ionicons name="close-circle" size={18} color={colors.text.muted} />
-          </TouchableOpacity>
-        )}
-      </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Volume</Text>
+          <Text style={styles.reading}>Current: {selected.volume ?? 0}%</Text>
+          <View style={styles.gridThree}>
+            <ActionButton
+              title="Down"
+              icon="remove"
+              onPress={() => run(() => sendCommand('volume_down'), 'Volume down command sent.')}
+            />
+            <ActionButton
+              title="Mute"
+              icon="volume-mute"
+              onPress={() => run(() => sendCommand('mute_toggle'), 'Mute toggle command sent.')}
+            />
+            <ActionButton
+              title="Up"
+              icon="add"
+              onPress={() => run(() => sendCommand('volume_up'), 'Volume up command sent.')}
+            />
+          </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.categories}
-      >
-        {CATEGORIES.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[styles.catChip, selectedCategory === cat.id && styles.catChipActive]}
-            onPress={() => setCategory(cat.id)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[styles.catChipText, selectedCategory === cat.id && styles.catChipTextActive]}
-            >
-              {cat.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+          <View style={styles.quickRow}>
+            {[15, 35, 55, 75].map((preset) => (
+              <TouchableOpacity
+                key={preset}
+                style={styles.quickPill}
+                onPress={() => run(() => sendCommand('volume_set', { value: preset }), `Volume set to ${preset}%.`)}
+              >
+                <Text style={styles.quickPillText}>{preset}%</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Brightness</Text>
+          <Text style={styles.reading}>Current: {selected.brightness ?? 0}%</Text>
+          <View style={styles.gridThree}>
+            <ActionButton
+              title="Dim"
+              icon="sunny"
+              onPress={() => run(() => sendCommand('brightness_down'), 'Brightness down command sent.')}
+            />
+            <ActionButton
+              title="Auto"
+              icon="sparkles"
+              onPress={() => run(() => sendCommand('brightness_set', { value: 55 }), 'Brightness set to 55%.')}
+            />
+            <ActionButton
+              title="Bright"
+              icon="sunny-outline"
+              onPress={() => run(() => sendCommand('brightness_up'), 'Brightness up command sent.')}
+            />
+          </View>
+
+          <View style={styles.quickRow}>
+            {[20, 40, 60, 80].map((preset) => (
+              <TouchableOpacity
+                key={preset}
+                style={styles.quickPill}
+                onPress={() => run(() => sendCommand('brightness_set', { value: preset }), `Brightness set to ${preset}%.`)}
+              >
+                <Text style={styles.quickPillText}>{preset}%</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {isSendingCommand ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.sm }} /> : null}
       </ScrollView>
-
-      <FlatList
-        data={agents}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        numColumns={1}
-        ListEmptyComponent={
-          !isLoadingAgents ? (
-            <View style={styles.empty}>
-              <Ionicons name="search-outline" size={40} color={colors.text.muted} />
-              <Text style={styles.emptyText}>No agents found</Text>
-              <Text style={styles.emptyHint}>Try a different search or category</Text>
-            </View>
-          ) : null
-        }
-        renderItem={({ item }) => <AgentCard agent={item} />}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-        }
-        showsVerticalScrollIndicator={false}
-      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-  },
+  scroll: { padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.md },
+  header: { marginBottom: spacing.sm },
   title: { ...typography.h2 },
   subtitle: { ...typography.caption, marginTop: 2 },
-  headerBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.full,
-    backgroundColor: `${colors.secondary}20`,
-    borderWidth: 1,
-    borderColor: `${colors.secondary}40`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
+  card: {
     backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  cardTitle: { ...typography.h3 },
+  reading: { ...typography.caption, marginBottom: spacing.xs },
+  gridTwo: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  gridThree: { flexDirection: 'row', gap: spacing.sm },
+  actionButton: {
+    flex: 1,
+    minWidth: '47%',
+    backgroundColor: colors.elevated,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    height: 46,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 6,
   },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, color: colors.text.primary, fontSize: 15 },
-  categories: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.xs,
-    marginBottom: spacing.md,
+  actionButtonDanger: {
+    borderColor: `${colors.danger}60`,
+    backgroundColor: `${colors.danger}18`,
   },
-  catChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
+  actionButtonText: { color: colors.text.primary, fontWeight: '600', fontSize: 13 },
+  quickRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  quickPill: {
+    flex: 1,
     borderRadius: radius.full,
-    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    marginRight: spacing.xs,
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: colors.elevated,
   },
-  catChipActive: {
-    backgroundColor: `${colors.primary}20`,
-    borderColor: colors.primary,
+  quickPillText: { ...typography.caption, color: colors.text.primary, fontWeight: '600' },
+  emptyWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
   },
-  catChipText: { fontSize: 13, fontWeight: '500', color: colors.text.secondary },
-  catChipTextActive: { color: colors.primary },
-  list: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
-  empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
-  emptyText: { ...typography.h3, color: colors.text.secondary },
-  emptyHint: { ...typography.caption },
+  emptyTitle: { ...typography.h3, color: colors.text.secondary },
+  emptyHint: { ...typography.caption, textAlign: 'center' },
 });

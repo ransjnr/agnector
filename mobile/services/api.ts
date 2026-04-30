@@ -1,7 +1,36 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
+import * as Linking from 'expo-linking';
+import { Platform } from 'react-native';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000/api';
+const getDefaultApiUrl = () => {
+  const explicitUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (explicitUrl) return explicitUrl;
+
+  const runtimeHost = Linking.parse(Linking.createURL('/')).hostname;
+  if (runtimeHost) {
+    return `http://${runtimeHost}:3000/api`;
+  }
+
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest2?.extra?.expoClient?.hostUri ||
+    (Constants as any).manifest?.debuggerHost;
+
+  if (hostUri) {
+    const host = hostUri.split(':')[0];
+    return `http://${host}:3000/api`;
+  }
+
+  if (Platform.OS === 'android') {
+    return 'http://10.0.2.2:3000/api';
+  }
+
+  return 'http://localhost:3000/api';
+};
+
+const API_URL = getDefaultApiUrl();
 
 const api = axios.create({
   baseURL: API_URL,

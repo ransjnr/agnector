@@ -1,0 +1,17 @@
+{
+  "name": "agnector-companion-service",
+  "version": "1.0.0",
+  "description": "Laptop companion bridge for Agnector mobile remote controller",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "loudness": "^0.4.2",
+    "wake_on_lan": "^1.0.0"
+  }
+}
