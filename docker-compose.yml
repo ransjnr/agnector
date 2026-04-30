@@ -1,0 +1,72 @@
+version: '3.9'
+
+services:
+  gateway:
+    build: ./services/gateway
+    ports:
+      - '3000:3000'
+    environment:
+      - PORT=3000
+      - AUTH_SERVICE_URL=http://auth-service:3001
+      - AGENT_SERVICE_URL=http://agent-service:3002
+      - CONNECTION_SERVICE_URL=http://connection-service:3003
+      - INTEGRATION_SERVICE_URL=http://integration-service:3004
+    depends_on:
+      - auth-service
+      - agent-service
+      - connection-service
+      - integration-service
+    networks:
+      - agnector-net
+    restart: unless-stopped
+
+  auth-service:
+    build: ./services/auth-service
+    ports:
+      - '3001:3001'
+    environment:
+      - PORT=3001
+      - JWT_SECRET=agnector-jwt-secret-change-in-production
+      - JWT_EXPIRES_IN=7d
+    networks:
+      - agnector-net
+    restart: unless-stopped
+
+  agent-service:
+    build: ./services/agent-service
+    ports:
+      - '3002:3002'
+    environment:
+      - PORT=3002
+      - JWT_SECRET=agnector-jwt-secret-change-in-production
+    networks:
+      - agnector-net
+    restart: unless-stopped
+
+  connection-service:
+    build: ./services/connection-service
+    ports:
+      - '3003:3003'
+    environment:
+      - PORT=3003
+      - JWT_SECRET=agnector-jwt-secret-change-in-production
+      - INTEGRATION_SERVICE_URL=http://integration-service:3004
+      - AGENT_SERVICE_URL=http://agent-service:3002
+    networks:
+      - agnector-net
+    restart: unless-stopped
+
+  integration-service:
+    build: ./services/integration-service
+    ports:
+      - '3004:3004'
+    environment:
+      - PORT=3004
+      - JWT_SECRET=agnector-jwt-secret-change-in-production
+    networks:
+      - agnector-net
+    restart: unless-stopped
+
+networks:
+  agnector-net:
+    driver: bridge
